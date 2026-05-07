@@ -1,0 +1,106 @@
+# Two-tier llama.cpp deployment — Qwen3.5-4B exec + Qwen3.5-9B smart.
+#
+# Services run independently; on a 10 GiB GPU the safe default is to keep
+# `exec` always-on and start `smart` on demand. Both bind to the Tailscale
+# IPv4 only — no LAN exposure.
+#
+# Usage:
+#   docker compose up -d exec
+#   docker compose up -d smart       # add when needed
+#   docker compose --profile both up -d   # bring up both at once
+#   docker compose down
+
+x-llamacpp-base: &llamacpp-base
+  image: ${LLAMACPP_IMAGE}
+  restart: unless-stopped
+  gpus: all
+  ipc: host
+  shm_size: 4gb
+  volumes:
+    - llamacpp-cache:/root/.cache/llama.cpp
+  environment:
+    HF_TOKEN: ${HF_TOKEN:-}
+    HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+    NVIDIA_VISIBLE_DEVICES: all
+    NVIDIA_DRIVER_CAPABILITIES: compute,utility
+  logging:
+    driver: local
+    options:
+      max-size: 50m
+      max-file: "5"
+  security_opt:
+    - no-new-privileges:true
+  ulimits:
+    memlock: -1
+    stack: 67108864
+  healthcheck:
+    test: ["CMD-SHELL", "curl -fsS --max-time 2 http://127.0.0.1:8080/health >/dev/null"]
+    interval: 30s
+    timeout: 5s
+    retries: 20
+    start_period: 600s
+
+services:
+  exec:
+    <<: *llamacpp-base
+    container_name: qwen35-4b-exec
+    profiles: [default, both]
+    ports:
+      - "${LLM_BIND_HOST}:${EXEC_PORT}:8080"
+    command:
+      - -hf
+      - ${EXEC_MODEL}
+      - --alias
+      - ${EXEC_ALIAS}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --ctx-size
+      - "${EXEC_CTX_SIZE}"
+      - --n-gpu-layers
+      - "999"
+      - --cache-type-k
+      - ${EXEC_KV_TYPE}
+      - --cache-type-v
+      - ${EXEC_KV_TYPE}
+      - --flash-attn
+      - "auto"
+      - --parallel
+      - "1"
+      - --jinja
+      - --no-mmproj
+
+  smart:
+    <<: *llamacpp-base
+    container_name: qwen35-9b-smart
+    profiles: [smart, both]
+    ports:
+      - "${LLM_BIND_HOST}:${SMART_PORT}:8080"
+    command:
+      - -hf
+      - ${SMART_MODEL}
+      - --alias
+      - ${SMART_ALIAS}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --ctx-size
+      - "${SMART_CTX_SIZE}"
+      - --n-gpu-layers
+      - "999"
+      - --cache-type-k
+      - ${SMART_KV_TYPE}
+      - --cache-type-v
+      - ${SMART_KV_TYPE}
+      - --flash-attn
+      - "auto"
+      - --parallel
+      - "1"
+      - --jinja
+      - --no-mmproj
+
+volumes:
+  llamacpp-cache:
+    name: llamacpp-cache

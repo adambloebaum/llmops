@@ -1,0 +1,68 @@
+services:
+  llm:
+    image: ${VLLM_IMAGE}
+    container_name: local-llm-vllm
+    restart: unless-stopped
+    gpus: all
+    ipc: host
+    shm_size: 8gb
+    ports:
+      - "${LLM_BIND_HOST}:${LLM_PORT}:8000"
+    volumes:
+      - "${LLM_MODEL_STORAGE}:/models"
+    environment:
+      HF_HOME: /models/huggingface
+      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+      HF_TOKEN: ${HF_TOKEN:-}
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      VLLM_NO_USAGE_STATS: "1"
+    command:
+      - ${MODEL_ID}
+      - --served-model-name
+      - ${SERVED_MODEL_NAME}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --download-dir
+      - /models/huggingface
+      - --dtype
+      - half
+      - --generation-config
+      - vllm
+      - --quantization
+      - ${QUANTIZATION}
+      - --kv-cache-dtype
+      - ${KV_CACHE_DTYPE}
+      - --max-model-len
+      - ${MAX_MODEL_LEN}
+      - --max-num-seqs
+      - ${MAX_NUM_SEQS}
+      - --max-num-batched-tokens
+      - ${MAX_NUM_BATCHED_TOKENS}
+      - --gpu-memory-utilization
+      - ${GPU_MEMORY_UTILIZATION}
+      - --enable-prefix-caching
+      - --enable-chunked-prefill
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - hermes
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()\""
+      interval: 30s
+      timeout: 5s
+      retries: 20
+      start_period: 600s
+    logging:
+      driver: local
+      options:
+        max-size: 50m
+        max-file: "5"
+    security_opt:
+      - no-new-privileges:true
+    ulimits:
+      memlock: -1
+      stack: 67108864

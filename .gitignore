@@ -1,0 +1,28 @@
+# Runtime config — copy from .env.example, never commit
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.venvs/
+
+# Bench artifacts (per-run output, not source)
+bench/artifacts/
+bench/results/*.json
+bench/agent-smoke/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Local model cache (gigabytes — lives outside repo)
+llm-models/
+huggingface/
+
+# Archive artifacts that are bind-mounted from containers
+archive/vllm/bench-stale/
