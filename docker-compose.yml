@@ -18,6 +18,7 @@ x-llamacpp-base: &llamacpp-base
   shm_size: 4gb
   volumes:
     - llamacpp-cache:/root/.cache/llama.cpp
+    - ${LLM_GGUF_DIR}:/models:ro
   environment:
     HF_TOKEN: ${HF_TOKEN:-}
     HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
@@ -48,8 +49,8 @@ services:
     ports:
       - "${LLM_BIND_HOST}:${EXEC_PORT}:8080"
     command:
-      - -hf
-      - ${EXEC_MODEL}
+      - -m
+      - /models/${EXEC_MODEL_FILE}
       - --alias
       - ${EXEC_ALIAS}
       - --host
@@ -78,8 +79,8 @@ services:
     ports:
       - "${LLM_BIND_HOST}:${SMART_PORT}:8080"
     command:
-      - -hf
-      - ${SMART_MODEL}
+      - -m
+      - /models/${SMART_MODEL_FILE}
       - --alias
       - ${SMART_ALIAS}
       - --host

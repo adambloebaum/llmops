@@ -50,6 +50,29 @@ That stack worked but only ever fit one model on this card. llama.cpp's
 The vLLM stack (preserved under `archive/vllm/`) is a working fallback if
 the workload ever shifts toward higher concurrency on a bigger GPU.
 
+## Schema-constrained outputs
+
+llama.cpp's server expects the OpenAI structured-outputs envelope, not a flat
+schema:
+
+```json
+{
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {
+      "name": "AgentDecision",
+      "strict": true,
+      "schema": { ... }
+    }
+  }
+}
+```
+
+Sending `{"type": "json_schema", "schema": ...}` (the simpler form some
+inference servers accept) makes llama.cpp ignore the schema silently and
+return whatever JSON the model felt like producing. The router and
+`tests/agent_decision_schema.py` use the correct envelope.
+
 ## Generation defaults
 
 Qwen3.5 enables thinking mode by default. For an execution agent, disable

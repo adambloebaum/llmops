@@ -169,3 +169,53 @@ Started: `2026-05-07T02:06:39Z`
   vLLM-specific Prometheus scraping.
 - Wrote `docs/architecture.md` (tier roles, VRAM budget with fallback ladder) and
   `docs/routing-policy.md` (exec→smart→Codex rules + Codex packet shape).
+
+### 2026-05-07T19:40Z — `git init`, GitHub private repo
+
+- `git init -b main`, initial commit with `Co-Authored-By` trailer.
+- Verified `.env` excluded; 32 files staged.
+- `gh repo create adambloebaum/local-llmops --private --source . --push --description ...`
+  succeeded; remote at `git@github.com:adambloebaum/local-llmops.git`.
+
+### 2026-05-07T19:42Z — Image + weights
+
+- Pulled `ghcr.io/ggml-org/llama.cpp:server-cuda` (current build is `9049 (2496f9c14)`,
+  CUDA 12.8 runtime, fine on driver 580).
+- First `docker compose up exec` failed: `-hf unsloth/Qwen3.5-4B-GGUF:UD-Q4_K_XL`
+  returned `HEAD failed, status: 404`. llama.cpp's `-hf` shorthand depends on
+  `gguf-manifests/...` files in the HF repo, which Unsloth's GGUF repos do not
+  ship. The HF resolve URL for the actual file works fine.
+- Pivoted to direct download into `~/llm-models/gguf/` and `-m /models/...`
+  via a read-only bind mount in compose. Updated `.env`/`.env.example` to use
+  `LLM_GGUF_DIR`, `EXEC_MODEL_FILE`, `SMART_MODEL_FILE` instead of `-hf`.
+- Both GGUFs downloaded:
+  - `Qwen3.5-4B-UD-Q4_K_XL.gguf` 2.8 GiB
+  - `Qwen3.5-9B-UD-Q4_K_XL.gguf` 5.6 GiB (first attempt finished silently at
+    1.1 GiB; rerun with `--retry-all-errors` produced the full file)
+
+### 2026-05-07T19:48Z — Tier validation
+
+- `exec` alone, 32K ctx, q8_0 KV: healthy, `~3.3 GiB` GPU memory in use, smoke
+  passed (`pong`).
+- `smart` alone, 16K ctx, q8_0 KV: healthy, `~6.2 GiB` in use, smoke passed.
+- Bringing both up at default contexts triggers exec restart-loop with exit 139
+  (CUDA segfault from VRAM contention). Confirms the architecture-doc estimate
+  that the 10 GiB card cannot fit both at full configured contexts.
+- Operational decision: ship as mode-switching by default. Added
+  `scripts/use-exec.sh`, `scripts/use-smart.sh`, and a `scripts/use-both.sh`
+  experimental script (exec 8K q8 + smart 8K q4) for the rare cases where
+  concurrency is worth the quality trade.
+
+### 2026-05-07T19:50Z — Schema regression
+
+- First run: 9B returned freeform JSON ignoring `response_format:
+  {type: "json_schema", schema: ...}`. The shape llama.cpp expects is the
+  OpenAI structured-outputs envelope: `response_format: {type: "json_schema",
+  json_schema: {name, strict, schema}}`. Fixed in `tests/agent_decision_schema.py`
+  and `router/server.py`.
+- Re-run with the corrected shape:
+  - exec (4B): `5/5` valid AgentDecision objects, all `kind=escalate|tool_call`,
+    all `risk=low`, all `confidence=0.95`.
+  - smart (9B): `5/5` valid, similar distribution.
+- Both endpoints honor the schema; both correctly identify the test-failure
+  prompt as escalation-worthy.

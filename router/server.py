@@ -128,7 +128,14 @@ async def chat_completions(req: Request) -> dict[str, Any]:
             upstream[passthrough] = body[passthrough]
 
     if cfg["schema"] is not None and body.get("response_format") is None and route in ("exec", "smart"):
-        upstream["response_format"] = {"type": "json_schema", "schema": cfg["schema"]}
+        upstream["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "AgentDecision",
+                "strict": True,
+                "schema": cfg["schema"],
+            },
+        }
     elif body.get("response_format") is not None:
         upstream["response_format"] = body["response_format"]
 

@@ -15,24 +15,35 @@ Codex packets before paying for cloud tokens.
 
 ## VRAM reality
 
-The 10 GiB card cannot comfortably host both tiers at full configured context
-simultaneously. Default operation: **`exec` always-on, `smart` on demand.**
+The 10 GiB card cannot host both tiers at the spec's default contexts at
+the same time. Verified empirically on this host:
+
+- `exec` alone (32K ctx, q8_0 KV): ~3.3 GiB used, healthy
+- `smart` alone (16K ctx, q8_0 KV): ~6.2 GiB used, healthy
+- both at default contexts: smart loads first, exec OOMs and the container
+  enters a CUDA segfault → restart loop (exit 139)
+
+Default operation is **mode-switching, not concurrent serving:**
 
 ```
-docker compose up -d exec       # always-on
-docker compose up -d smart      # bring up smart when escalation needed
-docker compose stop smart       # release VRAM
+./scripts/use-exec.sh    # stop smart if running, ensure exec up
+./scripts/use-smart.sh   # stop exec, ensure smart up
+./scripts/use-both.sh    # EXPERIMENTAL: both at reduced ctx (8K q8 + 8K q4)
 ```
 
-To attempt both at once (lower contexts, expect tight margins):
+The router (when running) uses `model:` field to pick a tier and the
+mode-switch scripts to toggle the active container. For interactive ops:
 
 ```
-docker compose --profile both up -d
+docker compose up -d exec        # always-on default
+docker compose stop smart        # release VRAM
+docker compose --profile smart up -d smart
 ```
 
-If `smart` OOMs, ratchet `SMART_CTX_SIZE` from 16384 → 8192 in `.env`, then
-`SMART_KV_TYPE` from `q8_0` → `q4_0`, then drop `--n-gpu-layers` from `999`
-to a partial offload (manual edit to compose `command:`).
+Further fallbacks if even the single-tier mode pressures VRAM: lower
+`SMART_CTX_SIZE` to 8192, then `SMART_KV_TYPE` to `q4_0`, then partial
+offload by editing `--n-gpu-layers` from `999` to a smaller integer in
+`docker-compose.yml`.
 
 ## Quick start
 

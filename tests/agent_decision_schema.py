@@ -31,7 +31,14 @@ def one(base: str, model: str) -> dict:
         "top_k": 20,
         "max_tokens": 512,
         "chat_template_kwargs": {"enable_thinking": False},
-        "response_format": {"type": "json_schema", "schema": AGENT_DECISION_SCHEMA},
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "AgentDecision",
+                "strict": True,
+                "schema": AGENT_DECISION_SCHEMA,
+            },
+        },
         "messages": [
             {
                 "role": "system",
