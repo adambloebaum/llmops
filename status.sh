@@ -15,10 +15,10 @@ SMART_BASE="http://${LLM_BIND_HOST:-127.0.0.1}:${SMART_PORT:-8081}"
 probe() {
   local label="$1" base="$2"
   echo "== ${label} (${base}) =="
-  if curl -fsS --max-time 3 "${base}/health" >/dev/null; then
+  if curl -fsS --max-time 3 "${base}/health" >/dev/null 2>&1; then
     echo "  health: ok"
   else
-    echo "  health: failed"
+    echo "  health: down"
     return
   fi
   if curl -fsS --max-time 5 "${base}/v1/models" >/tmp/local-llm-models-${label}.json; then
