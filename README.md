@@ -112,8 +112,17 @@ exec `up` across reboots; only `stop` smart on demand.
 │   ├── routing-policy.md       4B→9B and 9B→Codex escalation rules
 │   ├── hardware.md             host inventory
 │   └── DEPLOYMENT_LOG.md       append-only ops log
-├── router/                     local-agent-router (FastAPI scaffold)
-├── bench/                      llamacpp_bench.py concurrency sweep
+├── router/                     local-agent-router (stdlib HTTP server, :8090)
+│   ├── server.py               OpenAI-compat facade + JSONL telemetry
+│   ├── schema.py               canonical AgentDecision JSON Schema
+│   ├── prompts.py              per-route system prompts
+│   ├── codex_packet.py         escalation packet builder + validator
+│   ├── telemetry.py            JSONL append helper
+│   ├── rates.json              per-Mtok USD rates for spend reporting
+│   └── logs/router.jsonl       per-request telemetry (gitignored)
+├── bench/
+│   ├── llamacpp_bench.py       concurrency sweep
+│   └── spend_report.py         aggregates router/logs/router.jsonl
 └── tests/                      smoke and AgentDecision schema regression
 ```
 

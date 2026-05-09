@@ -14,6 +14,10 @@ bench/artifacts/
 bench/results/*.json
 bench/agent-smoke/
 
+# Router runtime (venv + telemetry log)
+router/.venv/
+router/logs/
+
 # Editor / OS
 .DS_Store
 .idea/

@@ -293,3 +293,75 @@ restarts also trigger reconnect attempts.
 
 Fix (manual one-shot): `scripts/recover-after-boot.sh` does the
 `down + up` cycle.
+
+### 2026-05-09 — Phase 2/3: router wired in + spend telemetry
+
+**Phase 2: router as an OpenAI-compatible facade on :8090**
+
+- Wrote `router/server.py` as a stdlib `ThreadingHTTPServer`
+  (no fastapi/uvicorn/httpx deps — venv-free, since the host is missing
+  `python3-venv` and the `astral.sh/uv` install script is hook-blocked).
+- Selects exec or smart by the client's `model:` field
+  (`local-qwen-exec`, `local-qwen-smart`, `local-qwen-smart-reasoning`,
+  `local-chat`/`chat`); injects per-route system prompts and sampling defaults.
+- Schema-constrained AgentDecision JSON for the exec/smart routes, with the
+  correct OpenAI `{type:"json_schema", json_schema:{name,strict,schema}}`
+  envelope and a single retry at temperature=0 if the response doesn't parse.
+- Streaming passthrough (SSE relay) for IDE plugins. Sniffs `usage` from
+  the final chunk when llama.cpp emits it.
+- `/health` aggregates upstream probes for both tiers.
+- `scripts/run-router.sh` runs `python3 -m router.server`; defaults bind
+  to `${LLM_BIND_HOST}:8090` (Tailscale).
+- Bug found and fixed live: `base.rstrip('/v1')` looks like it strips a
+  literal `/v1` suffix but is actually `str.rstrip` over the *character set*
+  `{'/','v','1'}`, which strips the trailing `1` of port `8081` too,
+  yielding `:808`. Replaced with proper conditional slicing.
+
+**Phase 3: telemetry + spend reporting**
+
+- `router/telemetry.py` appends a JSON line per request to
+  `router/logs/router.jsonl`: `ts, route, model, client_model, ip,
+  latency_ms, prompt_tokens, completion_tokens, total_tokens, stream,
+  schema_valid`.
+- `router/rates.json` carries per-model `{input,output}` USD-per-Mtok rates
+  for `local-*` (zeros), `claude-{opus,sonnet,haiku}-4-x`, and
+  `gpt-5-codex{,-high}`. Easy to edit when providers change pricing.
+- `bench/spend_report.py` reads the JSONL log and emits a daily/per-route
+  table with `actual$`, `baseline$`, and `saved$` (counterfactual savings
+  vs. the baseline). Supports `--by day|route|all`, `--since`, `--baseline`,
+  `--json`. Stdlib only.
+- Streaming requests log latency but no token counts (llama.cpp doesn't
+  emit `usage` in every stream build). Blocking requests get the full
+  triple. Spend numbers therefore underweight streamed traffic — note
+  this in any reporting.
+
+**systemd integration**
+
+`scripts/install-boot-fix.sh` now installs *two* units:
+- `local-llmops.service` (existing) — brings exec up after `tailscaled.service`
+- `local-llmops-router.service` (new) — runs the router after exec is up,
+  with `Restart=on-failure`, log to `/var/log/local-llmops-router.log`.
+
+Both auto-enable on `multi-user.target`. After a fresh reboot, the chain is:
+network-online → tailscaled → docker → exec container → router. Smart is
+not in either unit; bring it up on demand via `./scripts/use-smart.sh`.
+
+**End-to-end smoke (router → exec)**
+
+```
+$ curl -sS -X POST http://100.114.124.62:8090/v1/chat/completions \
+    -d '{"model":"local-qwen-exec","messages":[{"role":"user","content":
+        "test_empty_input failed with AssertionError. What now?"}]}'
+{
+  "choices":[{"message":{"content":
+    "{\"kind\":\"escalate\",\"tool_name\":\"run_tests\",
+      \"arguments\":{\"test\":\"tests/test_parser.py::test_empty_input\",\"verbose\":true},
+      \"rationale\":\"...\",\"risk\":\"low\",\"confidence\":0.9,
+      \"codex_packet\":null}"
+  }}],"usage":{"prompt_tokens":195,"completion_tokens":152}
+}
+```
+
+`schema_valid=true` logged to JSONL. `bench/spend_report.py --baseline
+claude-opus-4-7` showed those 5 dev-time requests (240 completion tokens
+total) would have cost $0.027 on Opus, $0.003 on gpt-5-codex; local cost $0.

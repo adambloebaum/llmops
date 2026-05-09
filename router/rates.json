@@ -1,0 +1,17 @@
+{
+  "comment": "Per-Mtok USD rates. local-* are 0 (electricity is rounding noise). Cloud rates are approximate; update when providers change pricing.",
+  "rates": {
+    "local-qwen-exec":             {"input": 0.0,   "output": 0.0},
+    "local-qwen-smart":            {"input": 0.0,   "output": 0.0},
+    "local-qwen-smart-reasoning":  {"input": 0.0,   "output": 0.0},
+    "local-chat":                  {"input": 0.0,   "output": 0.0},
+
+    "claude-opus-4-7":             {"input": 15.0,  "output": 75.0},
+    "claude-sonnet-4-6":           {"input": 3.0,   "output": 15.0},
+    "claude-haiku-4-5":            {"input": 0.80,  "output": 4.0},
+
+    "gpt-5-codex":                 {"input": 1.25,  "output": 10.0},
+    "gpt-5-codex-high":            {"input": 1.25,  "output": 10.0}
+  },
+  "default_cloud_baseline": "gpt-5-codex"
+}

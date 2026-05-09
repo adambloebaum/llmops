@@ -149,24 +149,86 @@ python3 bench/llamacpp_bench.py --tier exec --concurrency 1 --requests 8 \
   --max-tokens 512
 ```
 
-## Hooking up agentic tools
+## Router (OpenAI-compat proxy on :8090)
+
+The router selects exec/smart by `model:` field, injects per-route system
+prompts + sampling, enforces the AgentDecision schema for `local-qwen-exec`
+and `local-qwen-smart`, retries once on invalid JSON, and writes a JSONL
+telemetry event per request to `router/logs/router.jsonl`. Stdlib only —
+no venv to manage.
 
 ```bash
-# Codex CLI
-export OPENAI_BASE_URL=http://100.114.124.62:8080/v1
+./scripts/run-router.sh                      # foreground, 100.114.124.62:8090
+nohup ./scripts/run-router.sh > /tmp/router.log 2>&1 & disown   # detached
+
+# Health (probes both upstream tiers):
+curl -fsS http://100.114.124.62:8090/health
+
+# Models:
+curl -fsS http://100.114.124.62:8090/v1/models
+
+# Streaming chat through router:
+curl -sS -N -X POST http://100.114.124.62:8090/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"local-qwen-exec","stream":true,"messages":[{"role":"user","content":"hi"}]}'
+
+# Auto-start on boot (after tailscaled and exec):
+sudo ./scripts/install-boot-fix.sh           # installs both stack + router units
+sudo systemctl status local-llmops-router.service
+sudo journalctl -u local-llmops-router.service -f
+```
+
+Available model IDs through the router:
+- `local-qwen-exec` → exec, AgentDecision schema-constrained
+- `local-qwen-smart` → smart, AgentDecision schema-constrained
+- `local-qwen-smart-reasoning` → smart with `enable_thinking=true`, no schema
+- `local-chat` (or `chat`) → smart with chat system prompt, no schema
+
+Optional auth: `export ROUTER_API_KEY=secret`, then clients must send
+`Authorization: Bearer secret`.
+
+## Hooking up agentic tools (point at the router :8090, not the raw tier)
+
+```bash
+# Codex CLI — recommended: through the router
+export OPENAI_BASE_URL=http://100.114.124.62:8090/v1
 export OPENAI_API_KEY=local
 codex --model local-qwen-exec
 
-# aider
-aider --openai-api-base http://100.114.124.62:8080/v1 \
-      --openai-api-key local \
-      --model openai/local-qwen-exec
+# Continue / Cursor / Zed / opencode: any "OpenAI base URL" field
+#   apiBase: http://100.114.124.62:8090/v1
+#   model:   local-qwen-exec   (or local-qwen-smart, local-chat)
+#   apiKey:  local
 
-# Continue / Cursor / Zed: any "OpenAI base URL" field
+# Direct (bypassing router, no schema injection / telemetry):
 #   apiBase: http://100.114.124.62:8080/v1
 #   model:   local-qwen-exec
-#   apiKey:  local
 ```
+
+Claude Code does **not** speak OpenAI-compat; you'd need a LiteLLM proxy
+in front and `ANTHROPIC_BASE_URL=http://localhost:4000`.
+
+## Telemetry + spend tracking
+
+```bash
+# Each router request appends one JSON line to router/logs/router.jsonl:
+tail -f router/logs/router.jsonl
+
+# Aggregate against a cloud baseline (default: gpt-5-codex):
+python3 bench/spend_report.py
+python3 bench/spend_report.py --baseline claude-opus-4-7
+python3 bench/spend_report.py --by day
+python3 bench/spend_report.py --by route --json
+python3 bench/spend_report.py --since 2026-05-09
+
+# Edit the rate table:
+$EDITOR router/rates.json
+```
+
+The "saved" column is a counterfactual: tokens × per-Mtok rate of the
+baseline model. Streaming requests log latency but no token counts (llama.cpp
+doesn't always emit `usage` in stream chunks); blocking requests log full
+token counts.
 
 Claude Code does **not** speak OpenAI-compat; you'd need a LiteLLM proxy in
 front and `ANTHROPIC_BASE_URL=http://localhost:4000`.
