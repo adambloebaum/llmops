@@ -128,6 +128,10 @@ log.
 
 ## Operations
 
+See `CHEATSHEET.md` for the full paste-ready command catalog (container ops,
+mode-switching, chat, curl, tests, benchmarks, agentic-CLI hookups, troubleshooting).
+Quick basics:
+
 ```
 docker compose ps
 docker compose logs -f exec
