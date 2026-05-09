@@ -219,3 +219,77 @@ Started: `2026-05-07T02:06:39Z`
   - smart (9B): `5/5` valid, similar distribution.
 - Both endpoints honor the schema; both correctly identify the test-failure
   prompt as escalation-worthy.
+
+### 2026-05-08 — Helper scripts and bench
+
+- `scripts/chat.py` (stdlib-only streaming CLI; `--smart`, `--think`, `--once`).
+- `bench/llamacpp_bench.py` (threaded concurrency sweep, OpenAI-compat,
+  reports per-request and aggregate decode/prompt tok/s + p50/p95).
+- Quick measurement: 4B exec at c=1 ≈ 130 tok/s decode, c=4 ≈ 143 tok/s
+  aggregate (per-request 54 tok/s) at 96 max_tokens.
+
+### 2026-05-09 — Cleanup of Qwen2.5/vLLM remnants
+
+- Removed `~/llm-models/huggingface/` (5.3 GiB GPTQ weights for the prior
+  Qwen2.5-Coder-7B baseline). Files were root-owned (Docker bind-mount
+  artifact); deleted via a throwaway alpine container with the dir bind-mounted
+  read-write — sudo not required.
+- Removed `~/llm-models/bench_*.json` (12 vLLM-CLI benchmark output files).
+- Removed `local-llmops/archive/` (entire directory: `archive/vllm/` original
+  compose, env, README, status.sh, plus root-owned `bench-stale/` aider tags
+  cache).
+- Removed `bench/{regression,smoke,tool_trajectory}.py`,
+  `bench/run_{vllm_bench,scenario}.sh`, and `bench/results.md` — all
+  vLLM-CLI-specific. `bench/llamacpp_bench.py` is the supported bench going forward.
+- Removed `docs/decision.md` and `docs/research.md` — the vLLM-era ADR and
+  engine/model survey are superseded by `docs/architecture.md` and the migration
+  history in this log.
+- Updated `README.md` to drop archive references and add the reboot-behavior
+  note (containers in `docker compose stop` state do not auto-restart on boot).
+- Hardened `scripts/chat.py` with a preflight `/health` check that suggests
+  `./scripts/use-exec.sh` or `./scripts/use-smart.sh` when the requested tier
+  isn't listening, instead of a bare `Connection refused` from urllib.
+
+### Reboot behavior note
+
+Docker is enabled at boot. `restart: unless-stopped` re-starts containers
+that were *running* when the daemon went down — but `docker compose stop`
+counts as an explicit stop, so a stopped container stays stopped through
+the reboot. Default workflow: keep exec `up` across reboots; only `stop`
+smart on demand. After a reboot, run `docker compose ps` and `./status.sh`
+to confirm state.
+
+### 2026-05-09 — Docker/Tailscale boot race (real and reproducible)
+
+Symptom: after a reboot, `qwen35-4b-exec` shows `Up N minutes (healthy)` but
+`curl http://100.114.124.62:8080/health` fails with `Connection refused`,
+and `ss -tln` shows no listener on 8080.
+
+Root cause: dockerd starts in parallel with `tailscaled.service`. If dockerd
+tries to start the exec container before tailscaled has bound
+`100.114.124.62`, the port-mapping setup fails:
+
+```
+dockerd: Failed to allocate port  error="failed to bind host port
+100.114.124.62:8080/tcp: cannot assign requested address"
+dockerd: failed to start container ... failed to set up container
+networking: driver failed programming external connectivity on endpoint
+qwen35-4b-exec ... cannot assign requested address
+```
+
+The container's own internal healthcheck (`curl 127.0.0.1:8080/health`)
+still passes, so `docker ps` reports healthy and the failure is silent
+unless you `docker inspect ... .NetworkSettings.Ports` (returns `{}`) or
+read the dockerd journal. `docker compose restart` does **not** retry the
+port allocation; you need `docker compose down && docker compose up -d`
+to force a fresh network namespace + binding.
+
+Fix (durable): `scripts/install-boot-fix.sh` installs
+`/etc/systemd/system/local-llmops.service` with
+`After=tailscaled.service Wants=tailscaled.service` and `Requires=docker.service`,
+running `docker compose --profile default up -d exec` after both are up.
+The container's own `restart: unless-stopped` is left in place so daemon
+restarts also trigger reconnect attempts.
+
+Fix (manual one-shot): `scripts/recover-after-boot.sh` does the
+`down + up` cycle.

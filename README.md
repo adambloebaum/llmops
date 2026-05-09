@@ -66,6 +66,35 @@ python3 tests/smoke_smart.py                     # smart endpoint
 python3 tests/agent_decision_schema.py           # JSON-schema regression
 ```
 
+## Reboot behavior
+
+There's a **boot-time race** to be aware of: Docker's daemon and Tailscale
+come up in parallel, and if Docker tries to start the exec container before
+Tailscale has bound `100.114.124.62`, the host port mapping silently fails
+(`failed to bind host port 100.114.124.62:8080/tcp: cannot assign requested
+address`). The container will report itself as `healthy` (its own internal
+`/health` check passes), but **no Tailscale client can reach it** until the
+container is recreated.
+
+**One-time fix (recommended):**
+```
+./scripts/install-boot-fix.sh
+```
+Installs `/etc/systemd/system/local-llmops.service` with
+`After=tailscaled.service` so exec only starts once Tailscale is up. Requires
+sudo, idempotent. After this, exec auto-starts cleanly on every boot.
+
+**Manual recovery if you ever land in the bad state:**
+```
+./scripts/recover-after-boot.sh    # docker compose down + up exec
+```
+
+Background: `restart: unless-stopped` re-starts containers that were
+*running* when the daemon went down — but `docker compose stop` (which the
+mode-switch scripts do, to free VRAM) counts as an explicit stop, so a
+stopped container stays stopped through the reboot. Default workflow: keep
+exec `up` across reboots; only `stop` smart on demand.
+
 ## Layout
 
 ```
@@ -73,32 +102,29 @@ python3 tests/agent_decision_schema.py           # JSON-schema regression
 ├── docker-compose.yml          two services (exec, smart) under profiles
 ├── .env / .env.example         runtime config (.env gitignored)
 ├── status.sh                   one-shot health + GPU + log probe
+├── scripts/
+│   ├── use-exec.sh / use-smart.sh / use-both.sh   tier mode-switch
+│   ├── chat.py                                     streaming CLI chat
+│   ├── install-boot-fix.sh                         systemd unit (After=tailscaled)
+│   └── recover-after-boot.sh                       fix Docker/Tailscale boot race
 ├── docs/
 │   ├── architecture.md         tier roles, generation defaults, agent contract
 │   ├── routing-policy.md       4B→9B and 9B→Codex escalation rules
-│   ├── decision.md             original ADR (Qwen2.5-Coder-7B / vLLM era)
-│   ├── research.md             engine + model + optimization survey
 │   ├── hardware.md             host inventory
 │   └── DEPLOYMENT_LOG.md       append-only ops log
-├── router/                     local-agent-router (in progress)
-├── bench/                      smoke + regression scripts (vLLM-era; needs port)
-├── tests/                      llama.cpp-era smoke and schema tests
-└── archive/vllm/               prior Codex deployment (kept for reference)
+├── router/                     local-agent-router (FastAPI scaffold)
+├── bench/                      llamacpp_bench.py concurrency sweep
+└── tests/                      smoke and AgentDecision schema regression
 ```
 
-## What changed vs. the prior vLLM deployment
+## History
 
-The original deployment (in `archive/vllm/`) ran a single
-`Qwen/Qwen2.5-Coder-7B-Instruct-GPTQ-Int4` on vLLM 0.20.1 at `:8000`. This
-repo replaces that with the two-tier llama.cpp design from the project spec:
-
-- vLLM → llama.cpp `server-cuda` (GGUF Q4 native, simpler 10 GiB story)
-- 1× 7B GPTQ → 2× Qwen3.5 GGUFs at 4B and 9B
-- 1 endpoint → 2 endpoints with stable aliases (`local-qwen-exec`, `local-qwen-smart`)
-- Adds a router/scaffold for schema-constrained `AgentDecision` JSON,
-  4B→9B escalation rules, and Codex packet compression
-
-See `docs/DEPLOYMENT_LOG.md` for the full migration log.
+This repo started life on 2026-05-07 as a Codex-built vLLM deployment of
+`Qwen2.5-Coder-7B-Instruct-GPTQ-Int4` on `:8000`, then migrated the same day
+to the two-tier llama.cpp design described above. Qwen2.5/vLLM artifacts
+(weights, archive directory, vLLM-only bench scripts, original ADR/research
+docs) have been removed; see `docs/DEPLOYMENT_LOG.md` for the full migration
+log.
 
 ## Operations
 

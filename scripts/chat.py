@@ -35,6 +35,21 @@ def load_env() -> dict[str, str]:
     return out
 
 
+def preflight(base: str, tier: str) -> None:
+    try:
+        with urllib.request.urlopen(f"{base}/health", timeout=2) as r:
+            if r.status != 200:
+                raise RuntimeError(f"/health returned {r.status}")
+    except Exception as e:
+        hint = "./scripts/use-smart.sh" if tier == "smart" else "./scripts/use-exec.sh"
+        sys.stderr.write(
+            f"\nerror: cannot reach {tier} endpoint at {base} ({e}).\n"
+            f"hint: bring it up with `{hint}`, then retry.\n"
+            f"      check status with `./status.sh`\n\n"
+        )
+        sys.exit(2)
+
+
 def stream_chat(base: str, model: str, messages: list[dict], thinking: bool, max_tokens: int) -> str:
     body = json.dumps({
         "model": model,
@@ -93,6 +108,7 @@ def main() -> int:
         port = env.get("EXEC_PORT", "8080")
         model = env.get("EXEC_ALIAS", "local-qwen-exec")
     base = f"http://{host}:{port}"
+    preflight(base, "smart" if args.smart else "exec")
 
     sys_msg = {
         "role": "system",
