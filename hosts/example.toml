@@ -1,0 +1,17 @@
+# Template for a new host.
+# Copy this to hosts/<hostname>.toml and edit. `hostname` must match `hostname -s`.
+
+# Where GGUF files live on disk. Default: ~/llm-models/gguf
+# gguf_dir = "/home/USER/llm-models/gguf"
+
+# Endpoint bind IP. Options:
+#   "tailscale"      auto-detect via `tailscale ip -4`  (recommended)
+#   "localhost"      127.0.0.1  (local-only)
+#   "1.2.3.4"        explicit IP
+# bind = "tailscale"
+
+# llama.cpp container image. Override if you maintain a fork.
+# image = "ghcr.io/ggml-org/llama.cpp:server-cuda"
+
+# Model to auto-start on boot via systemd. "none" disables autostart.
+# autostart = "none"

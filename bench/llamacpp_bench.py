@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""End-to-end OpenAI-compat benchmark for the llama.cpp tiers.
+"""End-to-end OpenAI-compat benchmark for any registered llmops model.
 
 Sends N non-streaming chat completions at concurrency C, measures wall latency,
 extracts prompt/completion tokens from the `usage` object, and reports:
@@ -11,8 +11,8 @@ extracts prompt/completion tokens from the `usage` object, and reports:
     aggregate prompt tok/s (total prompt tokens / total wall)
 
 Usage:
-    python3 bench/llamacpp_bench.py --tier exec  --concurrency 1,4,8 --requests 24
-    python3 bench/llamacpp_bench.py --tier smart --concurrency 1,4    --requests 16
+    python3 bench/llamacpp_bench.py --model qwen3.5-4b --concurrency 1,4,8 --requests 24
+    python3 bench/llamacpp_bench.py --model qwen3.5-9b --concurrency 1,4   --requests 16
 
 Output is JSON-per-scenario plus a human summary on stderr. Stdlib only
 (no httpx / no vLLM bench dependency).
@@ -23,7 +23,6 @@ import argparse
 import concurrent.futures as cf
 import json
 import os
-import re
 import statistics
 import sys
 import time
@@ -31,30 +30,21 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_REPO_ROOT))
 
-def load_env() -> dict[str, str]:
-    p = Path(__file__).resolve().parent.parent / ".env"
-    out: dict[str, str] = {}
-    if not p.exists():
-        return out
-    for line in p.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        m = re.match(r"^([A-Z_][A-Z0-9_]*)=(.*)$", line)
-        if m:
-            out[m.group(1)] = m.group(2).strip()
-    return out
+from llmops import host as _host  # noqa: E402
+from llmops import registry as _registry  # noqa: E402
 
 
-def base_for(tier: str) -> tuple[str, str]:
-    env = {**load_env(), **os.environ}
-    host = env.get("LLM_BIND_HOST", "127.0.0.1")
-    if tier == "exec":
-        return f"http://{host}:{env.get('EXEC_PORT', '8080')}", env.get("EXEC_ALIAS", "local-qwen-exec")
-    if tier == "smart":
-        return f"http://{host}:{env.get('SMART_PORT', '8081')}", env.get("SMART_ALIAS", "local-qwen-smart")
-    raise ValueError(tier)
+def base_for(model_name: str) -> tuple[str, str]:
+    models = _registry.load(_REPO_ROOT / "models.toml")
+    if model_name not in models:
+        raise ValueError(f"unknown model: {model_name}")
+    host = _host.load(_REPO_ROOT)
+    bind = os.environ.get("LLMOPS_BIND", host.bind_ip)
+    m = models[model_name]
+    return f"http://{bind}:{m.port}", m.alias
 
 
 PROMPT = (
@@ -145,15 +135,15 @@ def run_scenario(base: str, model: str, requests: int, concurrency: int, max_tok
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--tier", choices=["exec", "smart"], default="exec")
+    ap.add_argument("--model", default="qwen3.5-4b", help="model name from models.toml")
     ap.add_argument("--concurrency", default="1,4,8", help="comma-separated levels, e.g. 1,4,8,16")
     ap.add_argument("--requests", type=int, default=16, help="requests per scenario")
     ap.add_argument("--max-tokens", type=int, default=128)
     ap.add_argument("--out", type=str, default="", help="optional JSON path to write all scenarios")
     args = ap.parse_args()
 
-    base, model = base_for(args.tier)
-    print(f"# tier={args.tier}  base={base}  model={model}", file=sys.stderr)
+    base, model = base_for(args.model)
+    print(f"# model={args.model}  base={base}  alias={model}", file=sys.stderr)
     print(f"# requests/scenario={args.requests}  max_tokens={args.max_tokens}", file=sys.stderr)
 
     scenarios = []
@@ -172,7 +162,7 @@ def main() -> int:
         else:
             print(f"  all failed: {s}", file=sys.stderr)
     if args.out:
-        Path(args.out).write_text(json.dumps({"tier": args.tier, "model": model, "scenarios": scenarios}, indent=2))
+        Path(args.out).write_text(json.dumps({"model": args.model, "alias": model, "scenarios": scenarios}, indent=2))
         print(f"\nwrote {args.out}", file=sys.stderr)
     print(json.dumps(scenarios, indent=2))
     return 0

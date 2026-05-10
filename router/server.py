@@ -18,7 +18,7 @@ What this does NOT do:
     currently dispatches to a remote provider)
 
 Run:
-    cd ~/local-llmops
+    cd ~/llmops
     ./scripts/run-router.sh
 """
 
@@ -52,7 +52,7 @@ API_KEY = os.environ.get("ROUTER_API_KEY")  # if set, require Bearer match
 ROUTE_DEFAULTS: dict[str, dict[str, Any]] = {
     "exec": {
         "backend": EXEC_URL,
-        "upstream_model": "local-qwen-exec",
+        "upstream_model": "qwen3.5-4b",
         "system": EXEC_SYSTEM,
         "params": {"temperature": 0.2, "top_p": 0.8, "top_k": 20, "max_tokens": 1024},
         "thinking": False,
@@ -60,7 +60,7 @@ ROUTE_DEFAULTS: dict[str, dict[str, Any]] = {
     },
     "smart": {
         "backend": SMART_URL,
-        "upstream_model": "local-qwen-smart",
+        "upstream_model": "qwen3.5-9b",
         "system": SMART_SYSTEM,
         "params": {"temperature": 0.3, "top_p": 0.8, "top_k": 20, "max_tokens": 2048},
         "thinking": False,
@@ -68,7 +68,7 @@ ROUTE_DEFAULTS: dict[str, dict[str, Any]] = {
     },
     "smart_reasoning": {
         "backend": SMART_URL,
-        "upstream_model": "local-qwen-smart",
+        "upstream_model": "qwen3.5-9b",
         "system": SMART_SYSTEM,
         "params": {"temperature": 0.6, "top_p": 0.95, "top_k": 20, "max_tokens": 4096},
         "thinking": True,
@@ -76,7 +76,7 @@ ROUTE_DEFAULTS: dict[str, dict[str, Any]] = {
     },
     "chat": {
         "backend": SMART_URL,
-        "upstream_model": "local-qwen-smart",
+        "upstream_model": "qwen3.5-9b",
         "system": CHAT_SYSTEM,
         "params": {"temperature": 0.7, "top_p": 0.8, "top_k": 20, "max_tokens": 2048},
         "thinking": False,
@@ -84,11 +84,14 @@ ROUTE_DEFAULTS: dict[str, dict[str, Any]] = {
     },
 }
 
+# Map exposed model IDs to internal route names.
+# Direct model names route to the schema-constrained default route for that model;
+# add "-reasoning" or "-chat" suffix to opt into other behaviors on the same model.
 MODEL_ALIASES: dict[str, str] = {
-    "local-qwen-exec": "exec",
-    "local-qwen-smart": "smart",
-    "local-qwen-smart-reasoning": "smart_reasoning",
-    "local-chat": "chat",
+    "qwen3.5-4b": "exec",
+    "qwen3.5-9b": "smart",
+    "qwen3.5-9b-reasoning": "smart_reasoning",
+    "qwen3.5-9b-chat": "chat",
     "chat": "chat",
 }
 
@@ -192,7 +195,7 @@ class RouterHandler(BaseHTTPRequestHandler):
     def _handle_models(self) -> None:
         self._json_response(200, {
             "object": "list",
-            "data": [{"id": k, "object": "model", "owned_by": "local-llmops"} for k in MODEL_ALIASES],
+            "data": [{"id": k, "object": "model", "owned_by": "llmops"} for k in MODEL_ALIASES],
         })
 
     def _handle_chat(self) -> None:
@@ -206,7 +209,7 @@ class RouterHandler(BaseHTTPRequestHandler):
             self._error(400, f"bad request body: {e}")
             return
 
-        requested = body.get("model", "local-qwen-exec")
+        requested = body.get("model", "qwen3.5-4b")
         route = pick_route(requested)
         cfg = ROUTE_DEFAULTS[route]
         upstream = _build_upstream_body(body, cfg, route)

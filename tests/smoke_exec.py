@@ -1,4 +1,4 @@
-"""Health + basic completion smoke for the exec tier (Qwen3.5-4B)."""
+"""Health + basic completion smoke for qwen3.5-4b."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from _common import alias, base_url
 
 
 def main() -> int:
-    base = base_url("exec")
-    expected = alias("exec")
+    base = base_url("qwen3.5-4b")
+    expected = alias("qwen3.5-4b")
 
     with urllib.request.urlopen(f"{base}/health", timeout=5) as r:
         assert r.status == 200, f"/health returned {r.status}"

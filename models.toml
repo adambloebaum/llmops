@@ -1,0 +1,58 @@
+# Vetted local LLM registry.
+#
+# Adding a model here is enough for `llmops use <name>` to work — provided the
+# GGUF file exists in the host's gguf_dir (see hosts/<hostname>.toml).
+#
+# Fields:
+#   file          GGUF filename inside the host's gguf_dir
+#   alias         OpenAI-API "model" field served by llama.cpp. Convention:
+#                 match the registry key for predictability.
+#   port          Static port for this model. Treat as permanent: clients
+#                 (Hermes, Claude Code, etc.) hardcode this. Pick unique ports.
+#   min_vram_gb   Floor for GPU auto-pick + safety check. Includes KV cache
+#                 headroom at the listed ctx_size.
+#   ctx_size      llama.cpp --ctx-size
+#   kv_type       llama.cpp --cache-type-{k,v}  (q8_0 default, q4_0 to save VRAM)
+#   description   Human description; surfaced in `llmops models`
+
+[models."qwen3.5-0.8b"]
+file = "Qwen3.5-0.8B-UD-Q4_K_XL.gguf"
+alias = "qwen3.5-0.8b"
+port = 8079
+min_vram_gb = 1.5
+ctx_size = 32768
+kv_type = "q8_0"
+description = "Tiny — speculative-decode draft model, repetitive ops, ultra-fast tool calls"
+
+  [models."qwen3.5-0.8b".sampling]
+  temperature = 0.2
+  top_p = 0.8
+  top_k = 20
+
+[models."qwen3.5-4b"]
+file = "Qwen3.5-4B-UD-Q4_K_XL.gguf"
+alias = "qwen3.5-4b"
+port = 8080
+min_vram_gb = 4
+ctx_size = 32768
+kv_type = "q8_0"
+description = "Fast executor — tool calls, log parsing, JSON decisions"
+
+  [models."qwen3.5-4b".sampling]
+  temperature = 0.2
+  top_p = 0.8
+  top_k = 20
+
+[models."qwen3.5-9b"]
+file = "Qwen3.5-9B-UD-Q4_K_XL.gguf"
+alias = "qwen3.5-9b"
+port = 8081
+min_vram_gb = 8
+ctx_size = 16384
+kv_type = "q8_0"
+description = "Smart tier — multi-step planning, code review, chat"
+
+  [models."qwen3.5-9b".sampling]
+  temperature = 0.3
+  top_p = 0.8
+  top_k = 20

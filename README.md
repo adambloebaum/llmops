@@ -1,162 +1,108 @@
-# local-llmops
+# llmops
 
-Two-tier local LLM serving on a single RTX 3080 10 GiB. OpenAI-compatible
-endpoints for agentic tools, with a router that compresses local-state into
-Codex packets before paying for cloud tokens.
-
-## Tiers
-
-| Tier | Container | Endpoint | Model | Role |
-| --- | --- | --- | --- | --- |
-| Exec | `qwen35-4b-exec` | `http://${TAILSCALE}:8080/v1` | `unsloth/Qwen3.5-4B-GGUF:UD-Q4_K_XL` (alias `local-qwen-exec`) | Default executor: tool calls, log/test parsing, JSON decisions, small patches |
-| Smart | `qwen35-9b-smart` | `http://${TAILSCALE}:8081/v1` | `unsloth/Qwen3.5-9B-GGUF:UD-Q4_K_XL` (alias `local-qwen-smart`) | Escalation, multi-step planning, chat, Codex packet generation |
-
-`${TAILSCALE}` is `100.114.124.62`. Endpoints are deliberately not LAN-exposed.
-
-## VRAM reality
-
-The 10 GiB card cannot host both tiers at the spec's default contexts at
-the same time. Verified empirically on this host:
-
-- `exec` alone (32K ctx, q8_0 KV): ~3.3 GiB used, healthy
-- `smart` alone (16K ctx, q8_0 KV): ~6.2 GiB used, healthy
-- both at default contexts: smart loads first, exec OOMs and the container
-  enters a CUDA segfault → restart loop (exit 139)
-
-Default operation is **mode-switching, not concurrent serving:**
-
-```
-./scripts/use-exec.sh    # stop smart if running, ensure exec up
-./scripts/use-smart.sh   # stop exec, ensure smart up
-./scripts/use-both.sh    # EXPERIMENTAL: both at reduced ctx (8K q8 + 8K q4)
-```
-
-The router (when running) uses `model:` field to pick a tier and the
-mode-switch scripts to toggle the active container. For interactive ops:
-
-```
-docker compose up -d exec        # always-on default
-docker compose stop smart        # release VRAM
-docker compose --profile smart up -d smart
-```
-
-Further fallbacks if even the single-tier mode pressures VRAM: lower
-`SMART_CTX_SIZE` to 8192, then `SMART_KV_TYPE` to `q4_0`, then partial
-offload by editing `--n-gpu-layers` from `999` to a smaller integer in
-`docker-compose.yml`.
+Portable local-LLM ops. One repo, runs on any GPU host. OpenAI-compatible
+endpoints for agentic tools (Hermes, Claude Code, Codex), Tailscale-bound,
+nothing auto-starts.
 
 ## Quick start
 
-```
-cp .env.example .env             # already populated; tweak if needed
-docker compose up -d exec
-./status.sh
-```
+```bash
+# from inside the repo
+alias llmops="$PWD/bin/llmops"
 
-First start downloads the GGUF weights into a Docker named volume
-(`llamacpp-cache`); expect ~3 GiB for 4B and ~6 GiB for 9B. Subsequent starts
-reuse the cache.
-
-## Health & smoke
-
-```
-./status.sh                                      # both tiers + GPU + recent logs
-python3 tests/smoke_exec.py                      # exec endpoint
-python3 tests/smoke_smart.py                     # smart endpoint
-python3 tests/agent_decision_schema.py           # JSON-schema regression
+llmops host           # what was detected on this box (GPUs, bind IP, etc.)
+llmops models         # vetted registry, with fit-on-this-host indicators
+llmops up             # interactive: pick GPU, pick model
+# or:
+llmops use qwen3.5-9b    # non-interactive; auto-picks a GPU with enough VRAM
+llmops status         # what's running + endpoints
+llmops stop qwen3.5-9b
 ```
 
-## Reboot behavior
-
-There's a **boot-time race** to be aware of: Docker's daemon and Tailscale
-come up in parallel, and if Docker tries to start the exec container before
-Tailscale has bound `100.114.124.62`, the host port mapping silently fails
-(`failed to bind host port 100.114.124.62:8080/tcp: cannot assign requested
-address`). The container will report itself as `healthy` (its own internal
-`/health` check passes), but **no Tailscale client can reach it** until the
-container is recreated.
-
-**One-time fix (recommended):**
-```
-./scripts/install-boot-fix.sh
-```
-Installs `/etc/systemd/system/local-llmops.service` with
-`After=tailscaled.service` so exec only starts once Tailscale is up. Requires
-sudo, idempotent. After this, exec auto-starts cleanly on every boot.
-
-**Manual recovery if you ever land in the bad state:**
-```
-./scripts/recover-after-boot.sh    # docker compose down + up exec
-```
-
-Background: `restart: unless-stopped` re-starts containers that were
-*running* when the daemon went down — but `docker compose stop` (which the
-mode-switch scripts do, to free VRAM) counts as an explicit stop, so a
-stopped container stays stopped through the reboot. Default workflow: keep
-exec `up` across reboots; only `stop` smart on demand.
+`llmops use` prints the endpoint URL once `/health` is green. That URL is
+the static base for any OpenAI-compatible client.
 
 ## Layout
 
 ```
 .
-├── docker-compose.yml          two services (exec, smart) under profiles
-├── .env / .env.example         runtime config (.env gitignored)
-├── status.sh                   one-shot health + GPU + log probe
-├── scripts/
-│   ├── use-exec.sh / use-smart.sh / use-both.sh   tier mode-switch
-│   ├── chat.py                                     streaming CLI chat
-│   ├── install-boot-fix.sh                         systemd unit (After=tailscaled)
-│   └── recover-after-boot.sh                       fix Docker/Tailscale boot race
-├── docs/
-│   ├── architecture.md         tier roles, generation defaults, agent contract
-│   ├── routing-policy.md       4B→9B and 9B→Codex escalation rules
-│   ├── hardware.md             host inventory
-│   └── DEPLOYMENT_LOG.md       append-only ops log
-├── router/                     local-agent-router (stdlib HTTP server, :8090)
-│   ├── server.py               OpenAI-compat facade + JSONL telemetry
-│   ├── schema.py               canonical AgentDecision JSON Schema
-│   ├── prompts.py              per-route system prompts
-│   ├── codex_packet.py         escalation packet builder + validator
-│   ├── telemetry.py            JSONL append helper
-│   ├── rates.json              per-Mtok USD rates for spend reporting
-│   └── logs/router.jsonl       per-request telemetry (gitignored)
-├── bench/
-│   ├── llamacpp_bench.py       concurrency sweep
-│   └── spend_report.py         aggregates router/logs/router.jsonl
-└── tests/                      smoke and AgentDecision schema regression
+├── models.toml                 model registry — single source of truth
+├── hosts/                      per-host config (gguf dir, bind, autostart)
+│   ├── home-compute.toml
+│   └── example.toml
+├── llmops/                     CLI Python package (stdlib only)
+│   ├── cli.py
+│   ├── registry.py
+│   ├── host.py
+│   └── runner.py
+├── bin/llmops                  CLI shim (alias this onto PATH)
+├── router/                     optional OpenAI-compat facade :8090
+├── skills/                     in-repo Claude Code skills
+│   └── add-model/              "set up X model" → resolve + download + register
+├── scripts/install-skills.sh   symlink skills/ into ~/.claude/skills/
+├── scripts/run-router.sh       start the router
+├── docs/                       cli + architecture + hardware + ops log
+├── bench/                      concurrency sweep + spend report
+└── tests/                      endpoint smoke + schema regression
 ```
 
-## History
+## Design in one paragraph
 
-This repo started life on 2026-05-07 as a Codex-built vLLM deployment of
-`Qwen2.5-Coder-7B-Instruct-GPTQ-Int4` on `:8000`, then migrated the same day
-to the two-tier llama.cpp design described above. Qwen2.5/vLLM artifacts
-(weights, archive directory, vLLM-only bench scripts, original ADR/research
-docs) have been removed; see `docs/DEPLOYMENT_LOG.md` for the full migration
-log.
+`models.toml` is the registry; each model has a static port and a VRAM
+floor. `hosts/<hostname>.toml` overrides per-host bits (gguf dir, bind IP,
+autostart) — anything omitted is auto-detected (Tailscale IP via
+`tailscale ip -4`, GPUs via `nvidia-smi`). `llmops use <model>` does a
+`docker run` with labels (`llmops.model`, `llmops.gpu`, `llmops.port`), so
+`llmops status` and `llmops stop` work regardless of how the container was
+named. Endpoints bind to the host's Tailscale IPv4 — stable across reboots,
+hidden from LAN.
 
-## Operations
+## Boot behavior
 
-See `CHEATSHEET.md` for the full paste-ready command catalog (container ops,
-mode-switching, chat, curl, tests, benchmarks, agentic-CLI hookups, troubleshooting).
-Quick basics:
+Default is **no auto-start** — bring up what you want, when you want. To
+opt in on a host, set `autostart = "<model-name>"` in
+`hosts/<hostname>.toml` and install a systemd unit (TODO: generic
+installer). Any boot-time unit must order itself
+`After=tailscaled.service` to avoid Docker binding the Tailscale IP before
+Tailscale is up.
 
-```
-docker compose ps
-docker compose logs -f exec
-docker compose logs -f smart
-docker compose restart exec
-docker compose down
-```
+## Multi-GPU + multi-host
+
+The CLI auto-detects all NVIDIA GPUs via `nvidia-smi` and picks one with
+enough free VRAM. To pin: `llmops use <model> --gpu N`. To run multiple
+models simultaneously across different GPUs, just `llmops use` each — they
+get their own containers and ports.
+
+For multi-host: clone the repo on each box. Each box advertises its
+endpoints over Tailscale. Cross-host routing is intentionally out of scope
+— point your client at whichever box has the model loaded.
+
+## Router (optional)
+
+`router/` is a stdlib HTTP server (`:8090`) that fronts the model endpoints
+with one URL, doing schema-constrained JSON, per-route prompt injection,
+and telemetry. Useful when you want one client config that's robust to
+which model happens to be loaded. Not required — most clients hit the
+per-model endpoints directly.
+
+Run with `./scripts/run-router.sh`. The script derives bind IP and upstream
+URLs from `models.toml` + `hosts/<hostname>.toml`.
+
+## Adding a model
+
+1. Download the GGUF into the host's `gguf_dir`.
+2. Add an entry to `models.toml`. Pick an unused port (8080+).
+3. `llmops models` to confirm it shows.
+4. `llmops use <name>` to start it.
 
 ## Client config
 
-Any OpenAI-compatible client:
+Once a model is up, any OpenAI-compatible client works:
 
-- Base URL: `http://100.114.124.62:8080/v1` (exec) or `:8081/v1` (smart)
-- Model: `local-qwen-exec` or `local-qwen-smart`
-- API key: any non-empty string
+- Base URL: output of `llmops endpoint <model>`
+- Model name: the `alias` from `models.toml`
+- API key: any non-empty string (llama.cpp doesn't require one)
 
-Default sampling (executor): `temperature=0.2, top_p=0.8, top_k=20`,
-`chat_template_kwargs={"enable_thinking": false}`. See
-`docs/architecture.md` for smart and reasoning-mode defaults.
+See `docs/cli.md` for full CLI reference, `docs/architecture.md` for the
+two-tier routing rationale, and `docs/DEPLOYMENT_LOG.md` for migration
+history.

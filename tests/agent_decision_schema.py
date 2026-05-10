@@ -1,8 +1,9 @@
-"""Schema-constrained AgentDecision regression for both tiers.
+"""Schema-constrained AgentDecision regression for both registered models.
 
-Hits each tier 5 times with a JSON-schema-constrained chat completion and
+Hits each model 5 times with a JSON-schema-constrained chat completion and
 asserts every response parses, validates against the schema, and uses an
-allowed enum value for `kind`/`tool_name`/`risk`.
+allowed enum value for `kind`/`tool_name`/`risk`. Only runs against models
+that are currently up.
 """
 
 from __future__ import annotations
@@ -86,10 +87,10 @@ def validate(d: dict) -> list[str]:
     return errs
 
 
-def run_tier(tier: str, n: int = 5) -> int:
-    base = base_url(tier)
-    model = alias(tier)
-    print(f"== {tier} ({base}, model={model}) ==")
+def run_model(name: str, n: int = 5) -> int:
+    base = base_url(name)
+    model = alias(name)
+    print(f"== {name} ({base}, model={model}) ==")
     fails = 0
     for i in range(n):
         try:
@@ -103,17 +104,17 @@ def run_tier(tier: str, n: int = 5) -> int:
         except Exception as e:
             fails += 1
             print(f"  [{i+1}/{n}] ERROR: {e}")
-    print(f"  {tier} fails: {fails}/{n}")
+    print(f"  {name} fails: {fails}/{n}")
     return fails
 
 
 def main() -> int:
     total = 0
-    for tier in ("exec", "smart"):
+    for name in ("qwen3.5-4b", "qwen3.5-9b"):
         try:
-            total += run_tier(tier)
+            total += run_model(name)
         except Exception as e:
-            print(f"{tier}: tier unavailable — {e}")
+            print(f"{name}: unavailable — {e}")
     return 1 if total else 0
 
 

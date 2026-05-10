@@ -14,9 +14,9 @@ agentic CLI / harness
         v
   local-agent-router  (router/, optional)
         |
-        |-- :8080 /v1   local-qwen-exec   -> Qwen3.5-4B  UD-Q4_K_XL
+        |-- :8080 /v1   qwen3.5-4b   -> Qwen3.5-4B  UD-Q4_K_XL
         |
-        '-- :8081 /v1   local-qwen-smart  -> Qwen3.5-9B  UD-Q4_K_XL
+        '-- :8081 /v1   qwen3.5-9b   -> Qwen3.5-9B  UD-Q4_K_XL
                                              (escalate to Codex from here)
 ```
 

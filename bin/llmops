@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# llmops CLI shim — resolves the repo root and runs the Python package.
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$HERE/.." && pwd)"
+exec python3 -m llmops "$@"

@@ -1,0 +1,15 @@
+# Per-host config for home-compute.
+#
+# All fields optional. Anything omitted falls back to auto-detection:
+#   gguf_dir   ~/llm-models/gguf
+#   bind       "tailscale"  (resolves via `tailscale ip -4`)
+#   image      ghcr.io/ggml-org/llama.cpp:server-cuda
+#   autostart  none
+
+gguf_dir = "/home/adam/llm-models/gguf"
+bind = "tailscale"
+image = "ghcr.io/ggml-org/llama.cpp:server-cuda"
+
+# Set to a model name (e.g. "qwen3.5-4b") to have systemd auto-start it on boot.
+# Default is no auto-start; bring models up explicitly with `llmops use`.
+autostart = "none"
