@@ -19,6 +19,7 @@ llmops status                                # GPUs + running instances + endpoi
 llmops up                                    # interactive picker (GPU + model)
 llmops use qwen3.5-4b                           # start (auto-picks GPU)
 llmops use qwen3.5-9b --gpu 0                   # pin to a specific GPU
+llmops use qwen3.6-27b                          # flagship 27B (3090-only — long-context)
 llmops use qwen3.5-9b --draft qwen3.5-0.8b      # speculative decoding (target + draft)
 llmops use qwen3.5-9b --draft qwen3.5-0.8b --draft-max 8   # tune speculation depth
 llmops stop qwen3.5-4b
@@ -48,6 +49,22 @@ runs both models in one process; stop with the usual `llmops stop qwen3.5-9b`.
 > Cosmetic llama.cpp warning `--gpu-layers-draft option will be ignored`
 > can appear in the logs but the draft IS on GPU. VRAM and acceptance
 > stats confirm.
+
+## Models on the registry
+
+| Name | Size | Port | Ctx | KV | min VRAM | Use case |
+|---|---|---|---|---|---|---|
+| `qwen3.5-0.8b` | 0.8B Q4 | 8079 | 32K | q8_0 | 1.5 GB | Tiny — speculative draft, ultra-fast tool calls |
+| `qwen3.5-4b` | 4B Q4 | 8080 | 32K | q8_0 | 4 GB | Fast executor — log parsing, JSON decisions |
+| `qwen3.5-9b` | 9B Q4 | 8081 | 16K | q8_0 | 8 GB | Smart tier — multi-step planning, code review |
+| `qwen3.6-27b` | 27B Q4 | 8082 | **256K** | q4_0 | 23.5 GB | Flagship — repo-scale code review, long-doc reasoning (3090-only) |
+
+> `qwen3.6-27b` runs right at the 3090's 24 GiB ceiling (~22 GB used). Don't
+> try to stack a draft model alongside it on the same GPU. Use
+> `chat_template_kwargs: {"enable_thinking": false}` to avoid the empty-content
+> trap (output otherwise lands in `reasoning_content`). MTP speculative decoding
+> (`--spec-type draft-mtp`) is NOT usable — Unsloth GGUFs drop MTP heads and
+> llama.cpp has no Qwen3-Next MTP architecture support merged yet (as of 2026-05-20).
 
 ## Direct docker (for debugging)
 

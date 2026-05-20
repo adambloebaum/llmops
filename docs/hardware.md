@@ -1,5 +1,11 @@
 # Hardware Inventory
 
+> **2026-05-20 update — GPU swap.** The RTX 3080 (10 GiB) was replaced with
+> an **RTX 3090 (24 GiB)**. Driver bumped to `580.142`. All sections below
+> referencing the 3080 are the historical baseline at original deployment;
+> the live GPU is now the 3090 (verified via `llmops host`). Power limit
+> on the 3090 may be tuned below stock (350 W) — see ops notes.
+
 Collected: `2026-05-07T02:07:09Z` through `2026-05-07T02:11:03Z`
 
 Deployment root: `/home/adam`
@@ -12,8 +18,8 @@ Model storage target: `/home/adam/llm-models`
 - CPU: AMD Ryzen 9 5950X, 16 cores / 32 threads
 - RAM: 62 GiB usable
 - NUMA: 1 node
-- GPU: 1x NVIDIA GeForce RTX 3080 10 GiB, Ampere
-- NVIDIA driver: `580.126.09`
+- GPU: 1x NVIDIA GeForce RTX 3090 24 GiB, Ampere (was RTX 3080 10 GiB at original 2026-05-07 collection)
+- NVIDIA driver: `580.142` (was `580.126.09` at original collection)
 - CUDA exposed by driver: `13.0`
 - Docker: installed and running
 - NVIDIA container runtime: installed and verified with CUDA 13 container

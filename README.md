@@ -15,6 +15,7 @@ llmops models         # vetted registry, with fit-on-this-host indicators
 llmops up             # interactive: pick GPU, pick model
 # or:
 llmops use qwen3.5-9b    # non-interactive; auto-picks a GPU with enough VRAM
+llmops use qwen3.6-27b   # flagship 27B w/ 256K context — needs the 3090
 llmops status         # what's running + endpoints
 llmops stop qwen3.5-9b
 ```
