@@ -56,3 +56,17 @@ description = "Smart tier — multi-step planning, code review, chat"
   temperature = 0.3
   top_p = 0.8
   top_k = 20
+
+[models."qwen3.6-27b"]
+file = "Qwen3.6-27B-UD-Q4_K_XL.gguf"
+alias = "qwen3.6-27b"
+port = 8082
+min_vram_gb = 23.5
+ctx_size = 262144
+kv_type = "q4_0"
+description = "Flagship long-context reasoning — 256K ctx, repo-scale code review, multi-doc analysis (3090-only)"
+
+  [models."qwen3.6-27b".sampling]
+  temperature = 0.3
+  top_p = 0.8
+  top_k = 20
