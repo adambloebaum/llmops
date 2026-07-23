@@ -57,7 +57,16 @@ runs both models in one process; stop with the usual `llmops stop qwen3.5-9b`.
 | `qwen3.5-0.8b` | 0.8B Q4 | 8079 | 32K | q8_0 | 1.5 GB | Tiny — speculative draft, ultra-fast tool calls |
 | `qwen3.5-4b` | 4B Q4 | 8080 | 32K | q8_0 | 4 GB | Fast executor — log parsing, JSON decisions |
 | `qwen3.5-9b` | 9B Q4 | 8081 | 16K | q8_0 | 8 GB | Smart tier — multi-step planning, code review |
-| `qwen3.6-27b` | 27B Q4 | 8082 | **256K** | q4_0 | 23.5 GB | Flagship — repo-scale code review, long-doc reasoning (3090-only) |
+| `qwen3.6-27b` | 27B Q4 | 8082 | **256K** | q4_0 | 23.5 GB | Flagship dense — repo-scale code review, long-doc reasoning (3090-only) |
+| `qwen3.6-35b-a3b` | 35B-A3B Q4 | 8083 | **256K** | q8_0 | 21 GB | Hybrid MoE, experts partly on CPU — long agentic coding, ~80 tok/s (3090-only) |
+
+> `qwen3.6-35b-a3b` is a hybrid SSM/attention MoE (8/256 experts active). Only
+> every 4th layer is full-attention, so its KV cache is tiny — the full 256K
+> window fits in a few GB. `n_cpu_moe=8` in `models.toml` offloads 8 of 40 expert
+> layers to CPU RAM (needs ~15 GB free system RAM); the rest stay on GPU for ~80
+> tok/s at ~20 GB VRAM. Lower `n_cpu_moe` = faster/less margin, higher = frees
+> VRAM. Abliterated/uncensored build; tool-calling confirmed working. Runs with
+> `enable_thinking:false` for interactive agent use.
 
 > `qwen3.6-27b` runs right at the 3090's 24 GiB ceiling (~22 GB used). Don't
 > try to stack a draft model alongside it on the same GPU. Use

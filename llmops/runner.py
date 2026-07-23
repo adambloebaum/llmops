@@ -154,6 +154,12 @@ def start(
         "--jinja",
         "--no-mmproj",
     ]
+    if model.n_cpu_moe > 0:
+        cmd += ["--n-cpu-moe", str(model.n_cpu_moe)]
+    elif model.cpu_moe:
+        cmd += ["--cpu-moe"]
+    if model.chat_template_kwargs:
+        cmd += ["--chat-template-kwargs", model.chat_template_kwargs]
     if draft is not None:
         cmd += [
             "--spec-draft-model", f"/models/{draft.file}",

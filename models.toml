@@ -70,3 +70,25 @@ description = "Flagship long-context reasoning — 256K ctx, repo-scale code rev
   temperature = 0.3
   top_p = 0.8
   top_k = 20
+
+# 35B-A3B hybrid SSM/attention MoE (8 of 256 experts active/token). Only every
+# 4th layer is full-attention, so KV cache is tiny — the full 256K window costs
+# almost no VRAM. n_cpu_moe=8 offloads 8 of 40 expert layers to CPU RAM (Ryzen
+# 5950X); the other 32 stay on GPU → ~80 tok/s at ~20 GB VRAM (~4 GB margin).
+# Push n_cpu_moe lower for more speed / less margin, higher to free VRAM.
+# Abliterated/uncensored variant — tool-calling verified working at smoke-test.
+[models."qwen3.6-35b-a3b"]
+file = "Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf"
+alias = "qwen3.6-35b-a3b"
+port = 8083
+min_vram_gb = 21
+ctx_size = 262144
+kv_type = "q8_0"
+n_cpu_moe = 8
+chat_template_kwargs = '{"enable_thinking": false}'
+description = "35B-A3B hybrid SSM/attn MoE, 8/40 expert layers on CPU — 256K ctx agentic coding, ~80 tok/s (decompile/trace loops)"
+
+  [models."qwen3.6-35b-a3b".sampling]
+  temperature = 0.3
+  top_p = 0.8
+  top_k = 20
